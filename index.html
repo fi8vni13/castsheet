@@ -198,6 +198,7 @@ $("#gen").onclick = async () => {
         await gen(seq[i]);
         if (i < seq.length-1) await new Promise(r=>setTimeout(r,4000));
     }
+    locked.textContent = "Generate boards";
     refreshKeyUI();
 };
 
