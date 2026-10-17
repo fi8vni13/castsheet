@@ -145,12 +145,16 @@ async function gen(kind){
 }
 
 $('#gen').onclick = async ()=>{
-  $('#gen').disabled = true; $('#gen').textContent = 'Generating…';
-  const jobs = [];
-  if($('#b3').checked) jobs.push(gen('3'));
-  if($('#b4').checked) jobs.push(gen('4'));
-  if(!jobs.length){ toast('pick a board first'); $('#gen').disabled=false; $('#gen').textContent='Generate boards'; return; }
-  await Promise.all(jobs);
+  const seq = [];
+  if($('#b3').checked) seq.push('3');
+  if($('#b4').checked) seq.push('4');
+  if(!seq.length){ toast('pick a board first'); return; }
+  $('#gen').disabled = true;
+  for(let i=0; i<seq.length; i++){
+    $('#gen').textContent = `Generating… board ${i+1}/${seq.length}`;
+    await gen(seq[i]);
+    if(i < seq.length-1) await new Promise(r=>setTimeout(r,3000)); /* free tier: 1 img / 5 s — stay under it */
+  }
   $('#gen').disabled = false; $('#gen').textContent='Generate boards';
 };
 
