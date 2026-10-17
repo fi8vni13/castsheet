@@ -33,6 +33,12 @@
   .hint{color:var(--dim);font-size:12px;margin-top:8px}
   .keycard{border:1px dashed var(--line);border-radius:14px;padding:14px 18px;margin-top:16px;background:#0b0e13}
   .keycard a{color:var(--acc);text-decoration:none}
+  .conn{display:none;align-items:center;gap:10px;flex-wrap:wrap}
+  .conn .pill{background:#10231e;border:1px solid #2b4a41;color:var(--acc);font-size:13px;font-weight:600;
+    padding:6px 14px;border-radius:99px}
+  .conn button{background:#0b0e13;border:1px solid var(--line);color:var(--txt);padding:7px 14px;font-size:13px}
+  .signin{width:100%;background:linear-gradient(90deg,var(--acc2),var(--acc));color:#0b0e13}
+  .alt{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
   .grid{display:grid;gap:16px}
   .shot{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .shot .bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
@@ -54,14 +60,27 @@
   <header>
     <div>
       <h1>Cast<span>Sheet</span></h1>
-      <p class="sub">Character reference sheets for AI production — describe a character, get matching multi-view &amp; expression boards on your own Pollinations key.</p>
+      <p class="sub">Character reference sheets for AI production — describe a character, get matching multi-view &amp; expression boards on your own Pollinations account.</p>
     </div>
   </header>
 
   <div class="keycard">
-    <label style="margin-top:0">Your Pollinations key <span style="color:var(--txt)">(sk_, BYOP)</span></label>
-    <input id="key" type="password" placeholder="sk_… — free key from <a href='https://enter.pollinations.ai/keys' target='_blank' rel='noopener'>enter.pollinations.ai/keys</a>">
-    <p class="hint">Bring your own key: it stays in this tab only (session storage) and is sent solely to gen.pollinations.ai — never stored by this app, and no key is embedded in it. A <code>?key=sk_…</code> URL param pre-fills it for your own private demo links.</p>
+    <div class="conn" id="connected">
+      <span class="pill" id="pill">● Connected — key active in this session</span>
+      <button id="signout">Sign out</button>
+    </div>
+    <div id="signedout">
+      <button class="signin" id="signin">Sign in with Pollinations</button>
+      <p class="hint">Uses your own Pollinations balance — you see what the app may use on the consent screen and can revoke it anytime from your dashboard.</p>
+      <div class="alt">
+        <details>
+          <summary style="color:var(--dim);cursor:pointer;font-size:13px">…or paste your key instead (BYOP)</summary>
+          <label style="margin-top:10px">Your Pollinations key <span style="color:var(--txt)">(sk_)</span></label>
+          <input id="key" type="password" placeholder="sk_… — free key from <a href='https://enter.pollinations.ai/keys' target='_blank' rel='noopener'>enter.pollinations.ai/keys</a>">
+          <p class="hint">Kept in this tab only (session storage), sent solely to gen.pollinations.ai. Never stored by this app; no key is embedded in it. A <code>?key=sk_…</code> URL param pre-fills it — for your own private demo links only.</p>
+        </details>
+      </div>
+    </div>
   </div>
 
   <main>
@@ -96,18 +115,18 @@
       </div>
 
       <button class="go" id="gen" disabled>Generate boards</button>
-      <p class="hint" id="genhint">Add your key to generate. Each board takes ~10–60 s.</p>
+      <p class="hint" id="genhint">Sign in or add your key to generate. Each board takes ~10–60 s.</p>
     </section>
 
     <section class="grid" id="out">
       <div class="shot" id="s3">
         <div class="bar"><b>THREE-VIEW SHEET</b><a class="dl" id="d3" style="display:none" target="_blank" rel="noopener" download>download ↗</a></div>
-        <div class="ph" id="p3">add your key, then generate</div>
+        <div class="ph" id="p3">sign in or add your key, then generate</div>
         <img id="i3" style="display:none" alt="three-view sheet">
       </div>
       <div class="shot" id="s4">
         <div class="bar"><b>EXPRESSION GRID</b><a class="dl" id="d4" style="display:none" target="_blank" rel="noopener" download>download ↗</a></div>
-        <div class="ph" id="p4">add your key, then generate</div>
+        <div class="ph" id="p4">sign in or add your key, then generate</div>
         <img id="i4" style="display:none" alt="expression grid">
       </div>
     </section>
@@ -124,29 +143,98 @@
 
 <script>
 const $ = s => document.querySelector(s);
+/* Publishable App Key (client_id) for CastSheet's Connect-User-Wallets app —
+   intentionally public; user-authorized sk_ keys never leave the browser session. */
+const APP_KEY = "pk_OHgATsJugAY2ARZ6";
+const REDIRECT = "https://fi8vni13.github.io/castsheet/";
 const API_MODEL = "black-forest-labs/flux.1-schnell";
 
-/* BYOP key: session-tab only. A ?key= param pre-fills it (private demo links). */
-const q = new URLSearchParams(location.search);
-const keyInput = $("#key");
-keyInput.value = q.get("key") || sessionStorage.getItem("castsheet_key") || "";
-const keyStatus = () => {
-    const k = keyInput.value.trim();
-    return k.startsWith("sk_") ? k : "";
-};
-keyInput.addEventListener("input", () => {
-    sessionStorage.setItem("castsheet_key", keyStatus());
-    refreshKeyUI();
-});
-
+/* ---------- key state: OAuth token or pasted key, session-only ---------- */
+function activeKey(){
+    return sessionStorage.getItem("castsheet_token") ||
+        ($("#key").value.trim().startsWith("sk_") ? $("#key").value.trim() : "");
+}
 function refreshKeyUI(){
-    const has = Boolean(keyStatus());
+    const has = Boolean(activeKey());
+    $("#connected").style.display = has ? "flex" : "none";
+    $("#signedout").style.display = has ? "none" : "block";
     $("#gen").disabled = !has;
     $("#genhint").textContent = has
         ? "Each board takes ~10–60 s. Boards run serially, inside any rate limit."
-        : "Add your key to generate. Each board takes ~10–60 s.";
+        : "Sign in or add your key to generate. Each board takes ~10–60 s.";
+}
+$("#signout").onclick = () => {
+    sessionStorage.removeItem("castsheet_token");
+    $("#key").value = "";
+    location.href = location.pathname; /* drop callback params, keep the tab */
+};
+
+/* ---------- Connect User Wallets: OAuth code flow + PKCE ---------- */
+function b64url(bytes){
+    return btoa(String.fromCharCode(...bytes))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function pkcePair(){
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    return { verifier, challenge: b64url(new Uint8Array(digest)) };
+}
+$("#signin").onclick = async () => {
+    const { verifier, challenge } = await pkcePair();
+    const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+    sessionStorage.setItem("castsheet_pkce", verifier);
+    sessionStorage.setItem("castsheet_state", state);
+    const p = new URLSearchParams({
+        response_type: "code",
+        client_id: APP_KEY,
+        redirect_uri: REDIRECT,
+        scope: "profile usage",
+        models: "image",
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+    });
+    location.href = "https://enter.pollinations.ai/authorize?" + p.toString();
+};
+
+/* OAuth callback: ?code=…&state=… → exchange for a scoped sk_ (PKCE, no client secret) */
+async function handleOAuthCallback(){
+    const q = new URLSearchParams(location.search);
+    if (!q.get("code")) return false;
+    if (q.get("state") !== sessionStorage.getItem("castsheet_state")) {
+        sessionStorage.removeItem("castsheet_state");
+        history.replaceState(null, "", location.pathname);
+        location.reload();
+        return true;
+    }
+    sessionStorage.removeItem("castsheet_state");
+    const verifier = sessionStorage.getItem("castsheet_pkce");
+    sessionStorage.removeItem("castsheet_pkce");
+    if (!verifier){ $("#p3").textContent = "sign-in failed (missing verifier) — try again"; return true; }
+    try {
+        const res = await fetch("https://enter.pollinations.ai/api/oauth/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                grant_type: "authorization_code",
+                code: q.get("code"),
+                client_id: APP_KEY,
+                redirect_uri: REDIRECT,
+                code_verifier: verifier,
+            }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j?.error_description || j?.error || ("HTTP " + res.status));
+        sessionStorage.setItem("castsheet_token", j.access_token);
+    } catch (e){
+        $("#p3").textContent = `sign-in failed: ${e.message}`;
+    }
+    history.replaceState(null, "", location.pathname);
+    refreshKeyUI();
+    return true;
 }
 
+/* ---------- boards ---------- */
 function promptFor(kind){
     const d = $("#desc").value.trim() || "a young woman with short silver hair and a patched green jacket";
     const st = $("#style").value;
@@ -158,7 +246,7 @@ function promptFor(kind){
 async function fetchBoard(kind, seed){
     const size = kind === "3" ? "width=1536&height=1024" : "width=1024&height=1024";
     const url = `https://gen.pollinations.ai/image/${encodeURIComponent(promptFor(kind))}?${size}&seed=${seed}&model=${API_MODEL}`;
-    const key = keyStatus();
+    const key = activeKey();
     if (!key) throw new Error("no key");
     /* BYOP: the key goes straight from this browser to the Pollinations API. */
     const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
@@ -183,7 +271,7 @@ async function gen(kind){
         ph.style.display="none"; img.src=blobUrl; img.style.display="block";
         dl.href=blobUrl; dl.style.display="inline";
     } catch (e){
-        ph.style.display="flex"; ph.textContent=`generation failed: ${e.message} — check your key / rate limits, then retry`;
+        ph.style.display="flex"; ph.textContent=`generation failed: ${e.message} — check your key / balance / rate limits, then retry`;
     }
 }
 
@@ -204,6 +292,13 @@ $("#gen").onclick = async () => {
 
 $("#rand").onclick = () => { $("#seed").value = Math.floor(Math.random()*1e6); };
 
+/* BYOP paste (fallback for no-OAuth use) */
+$("#key").addEventListener("input", () => {
+    const k = $("#key").value.trim();
+    if (k.startsWith("sk_")) sessionStorage.setItem("castsheet_pasted", k);
+    refreshKeyUI();
+});
+
 /* copy the exact prompt + API line, so boards can be re-run in any video workflow */
 $("#out").addEventListener("click", e => {
     if (e.target.classList.contains("dl")){
@@ -214,12 +309,20 @@ $("#out").addEventListener("click", e => {
     }
 });
 
-/* URL prefill (?desc=&seed=&style=&autogen=1) */
-if (q.get("desc")) $("#desc").value = q.get("desc");
-if (q.get("seed")) $("#seed").value = q.get("seed");
-if (q.get("style")) $("#style").value = q.get("style");
+/* URL prefill (?desc=&seed=&style=&autogen=1&key=sk_…) for private demo links */
+const q0 = new URLSearchParams(location.search);
+if (q0.get("desc")) $("#desc").value = q0.get("desc");
+if (q0.get("seed")) $("#seed").value = q0.get("seed");
+if (q0.get("style")) $("#style").value = q0.get("style");
+if (q0.get("key")) $("#key").value = q0.get("key");
+const pasted = sessionStorage.getItem("castsheet_pasted") || "";
+if (pasted && !$("#key").value) $("#key").value = pasted;
 refreshKeyUI();
-if (q.get("autogen") && keyStatus()) $("#gen").click();
+if (q0.get("code")) {
+    handleOAuthCallback().then(() => {
+        if (q0.get("autogen") && activeKey()) $("#gen").click();
+    });
+} else if (q0.get("autogen") && activeKey()) $("#gen").click();
 </script>
 </body>
 </html>
